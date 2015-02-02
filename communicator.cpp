@@ -8,16 +8,16 @@
 using namespace std;
 //using boost::lexical_cast;
 
-Communicator::Communicator(int _Nx, int _Ny, int _r, float _T, float _Beta, long _p, string rfName, int _Asize, bool _measTime)
+Communicator::Communicator(int _Nx, int _Ny, int _r, float _T, float _Beta, float _delta, long _p, string rfName, int _Asize, bool _measTime)
 {
     p = _p;
     
     //Define temperature in one of two ways
     if (_T == -1){
         _T = 1.0/(1.0*_Beta);
-         dataName = boost::str(boost::format("%02d-%03d-%03d-%s%06.3f") %_r %_Nx %_Ny %"b" %_Beta);
+         dataName = boost::str(boost::format("%02d-%03d-%03d-%s%06.3f-d%06.3f") %_r %_Nx %_Ny %"b"%_Beta%_delta);
     }
-    else dataName = boost::str(boost::format("%02d-%03d-%03d-%s%06.3f") %_r %_Nx %_Ny %"t" %_T);
+    else dataName = boost::str(boost::format("%02d-%03d-%03d-%s%06.3f-d%06.3f") %_r %_Nx %_Ny %"t"%_T%_delta);
     
     if  (not(_Asize<0)){
         dataName += boost::str(boost::format("-%04d") %_Asize);

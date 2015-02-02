@@ -344,7 +344,14 @@ long Replica::SwitchContinue(long enLeg){
 * Switch leg deterministically for the loop construction
 **************************************************************/
 long Replica::SwitchLegDeter(long enLeg, long vtype, long p){
-     
+    
+    //If it is Heisenberg model, there is only one possible 
+    //move to make:
+    if  (delta == 1.0) return SwitchReverse(enLeg);
+    //Otherwise, there are possible moves and the path tracing
+    //has to be adjusted accordingly.
+
+    
     //"Memory" of deterministic path tracing. On first encounter
     //of a vertex, it remembers the move that has been made, so
     //that on the next pass, the same move can be done.
@@ -489,7 +496,7 @@ void Replica::GetDeterministicLinks(){
                 //since the last move must also be a vertex move 
                 p = (long) leg/4;   //index of the corresponding operator
                 leg = p*4 + SwitchLegDeter(leg%4,vtx[p],p);  
-                if (DetDebug) cout << "V switch: " << setw(4) << leg;
+                if (DetDebug) cout << "V switch: " << setw(4) << leg << endl;
 
                 while (isELeg[leg] == false){
                    //Move to the leg it is connected to

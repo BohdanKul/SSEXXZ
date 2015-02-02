@@ -30,7 +30,7 @@ SSEXY::~SSEXY()
 SSEXY:: SSEXY(int _r, unsigned short _Nx, unsigned short _Ny, float _T, float _Beta, 
               float _delta, long seed, bool _measSS, bool _measTime, bool _detVerbose, int _Asize, string frName, 
               LATTICE * _Anor, LATTICE* _Ared, LATTICE* _Aext): 
-communicator(_Nx,_Ny,_r,_T,_Beta,seed,frName,_Asize, _measTime), 
+communicator(_Nx,_Ny,_r,_T,_Beta,_delta,seed,frName,_Asize, _measTime), 
 RandomBase(seed)
 //timer(_measTime)
 {
@@ -76,9 +76,15 @@ RandomBase(seed)
     
     Debug      = false;
     RandOffUpdate = true;
-    SRTon      = true;
-
-    ALRTon     = false;
+    
+    measRatio = _Aext->isDefined();
+    SRTon = false; ALRTon = false;
+    if (measRatio and (_delta==1.0))
+       {SRTon = false; ALRTon = true;}
+    else
+       {SRTon = true;  ALRTon = false;}
+        
+    
     Nloops     = 1;    
     nMeas      = 0;
     if  (SRTon) binSize = 100;
@@ -94,7 +100,6 @@ RandomBase(seed)
     LRatio        = 0;
     ALRatio       = 0;
     measSS        = _measSS;
-    measRatio     = _Aext->isDefined();
 
     if (measSS)    cout << "Measuring spin stiffness" << endl;
     if (measRatio) cout << "Measuring Z ratio" << endl;
@@ -127,9 +132,7 @@ RandomBase(seed)
     // Choose move weigths that minimize the bounce weight
     if  (_delta < 1.0){ cs = 0.0;  sc = (1.0 - _delta)/4.0; sr = (1.0 + _delta)/4.0; b1 = 0.0; b2  = 0.0;              b3 = 0.0;}
     else{               cs = 0.0;  sc = 0.0;                sr = 1.0/2.0;            b1 = 0.0; b2  = (_delta-1.0)/2.0; b3 = 0.0;}
-    //else{               cs = 0.0; sc = 0.0;                sr = 0.5;                b1 = 0.0; b2  = (_delta-1.0)/2.0; b3 = 0.0;}
 
-    //cs = 0.5; sc = 0.5; sr = 0.5; b1 = 0; b2 = 0; b3 = 0;
     // Associate with each vertex a set of 3 possible moves
     // Those correspond t Sandvik's solutions of DD equations
     float tmp2[6][4] = { {cs,sc, 0, b1},
@@ -154,16 +157,29 @@ RandomBase(seed)
             cout << OptVertexMoves[i][j] << " - "; 
         cout << endl;
     }
-    // Associate with each vertex a set of 2 possible moves.
-    // They allow non-intersecting partition of a vertex configuration.
-    float tmp3[6][4] = { {0.5,0.5,  0, 0},
-                         {0.5,0.5,  0, 0},
-                         {0.5,  0,0.5, 0},
-                         {0.5,  0,0.5, 0},
-                         {  0,0.5,0.5, 0},
-                         {  0,0.5,0.5, 0} 
-                       };
-    memcpy(DetVertexMoves,tmp3,sizeof tmp3);
+    // For the XY-model, associate with each vertex two moves.
+    // They produce a non-intersecting partition of a vertex configuration.
+    float XY[6][4] = { {0.5,0.5,  0, 0},
+                       {0.5,0.5,  0, 0},
+                       {0.5,  0,0.5, 0},
+                       {0.5,  0,0.5, 0},
+                       {  0,0.5,0.5, 0},
+                       {  0,0.5,0.5, 0} 
+                     };
+
+    // For the Heisenberg model, there is only one move for allowed vertices.
+    float Heisenberg[6][4] = { {0, 0, 0, 0},
+                               {0, 0, 0, 0},
+                               {0, 0, 1, 0},
+                               {0, 0, 1, 0},
+                               {0, 0, 1, 0},
+                               {0, 0, 1, 0} 
+                             };
+
+    // Store the deterministic moves depending on model under question.    
+    if  (delta == 1) memcpy(DetVertexMoves, Heisenberg, sizeof Heisenberg);
+    else             memcpy(DetVertexMoves, XY,         sizeof XY);
+
     //Initialize region A
     Aregion = _Anor->getLattice(); 
   
@@ -297,7 +313,7 @@ int SSEXY::BCnextSpin(int sindex,int& replica, bool connected){
 
     if (sindex<N) sindex +=N;
     else          sindex -=N;
-    if  (connected)
+    if  ((connected) and (r==2))
         replica = !replica;
 
     return sindex;
@@ -310,8 +326,8 @@ int SSEXY::BCnextSpin(int sindex,int& replica, bool connected){
 long SSEXY::LoopPartition(vector<long>& BC){
 
     Partitions.clear(); 
-    Partitions.push_back(*(Replicas[0]->getPart()));
-    Partitions.push_back(*(Replicas[1]->getPart()));
+    for (auto ir=0; ir!=r; ir++)
+        Partitions.push_back(*(Replicas[ir]->getPart()));
    
     int i;
     if  (Debug){
@@ -320,7 +336,7 @@ long SSEXY::LoopPartition(vector<long>& BC){
         for (auto ibc=BC.begin(); ibc!=BC.end(); ibc++)
             cout << *ibc << " ";
         cout << endl;
-        for (int ir=0; ir!=2; ir++){
+        for (int ir=0; ir!=r; ir++){
             i=0;
             for (auto spin=Partitions[ir].begin(); spin!=Partitions[ir].end(); spin++){
                 cout << setw(4) << *spin;
@@ -340,7 +356,7 @@ long SSEXY::LoopPartition(vector<long>& BC){
     //Repeat for all edge spins in both replicas
     DeterPaths.clear();
 
-    for (auto oreplica=0; oreplica!=2; oreplica++){
+    for (auto oreplica=0; oreplica!=r; oreplica++){
         for (auto ispin=0; ispin!=2*N; ispin++){
             
             //If the spin hasnt been visited
