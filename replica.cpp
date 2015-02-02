@@ -16,7 +16,7 @@ using namespace std;
 /**************************************************************
 *  Constructor 
 **************************************************************/
-Replica::Replica(unsigned short _Nx, unsigned short _Ny, float _T, long seed, int _id):
+Replica::Replica(unsigned short _Nx, unsigned short _Ny, float _delta, float _T, long seed, int _id):
 //Initialize random objects with default values
  RandomBase(seed)
 
@@ -57,7 +57,22 @@ Replica::Replica(unsigned short _Nx, unsigned short _Ny, float _T, long seed, in
     LatticeGeometry();
     
 
-   //Initialize spins
+    //Initialize SSE parameters
+    delta   = _delta;
+    epsilon = 0;
+    if  (delta < 1.0) epsilon = (1.0 - delta)/4.0;
+    else              epsilon = 0;
+    //Set vertex weights 
+    float tmp2[6] = { epsilon            , epsilon,
+                      delta/2.0 + epsilon, delta/2.0 + epsilon,
+                      0.5,                 0.5}; 
+    memcpy(VertexWeight, tmp2, sizeof tmp2);
+    cout << "Delta: " << delta << " Epsilon: " << epsilon << endl;
+    cout << "Vertex Weights: " << endl;
+    for (int i=0; i!=6; i++)
+        cout << i+1 << " - " << VertexWeight[i] << endl;
+
+    //Initialize spins
     spins.resize(N,0);
     spinPart.resize(2*N, -1);
     for (vector<long>::iterator spin=spins.begin(); spin!=spins.end(); spin++) {
@@ -175,8 +190,10 @@ Below, the left bottom site initiates 2 bonds:
              }
 }
 
-float Replica::BondDiagonalEnergy(long b){
-      return (float) 0.5;
+float Replica::BondDiagonalEnergy(long oper){
+      //cout << "   Vertex type  : " << VertexType(oper) << endl;
+      //cout << "   Vertex weight: " << VertexWeight[VertexType(oper)-1] << endl; 
+      return VertexWeight[VertexType(oper)-1];
 }
 
 /**************************************************************
@@ -184,15 +201,17 @@ float Replica::BondDiagonalEnergy(long b){
 **************************************************************/
 long Replica::DiagonalMove()
 {
+     //cout << "Diagonal move:" << endl;
      long b=0;    //Bond index
      float AccP = 0;       //Acceptance probability
      float uRan;
+     long count = 0;
      ap = spins;
      for (vector<long>::iterator oper=sm.begin(); oper!=sm.end(); oper++) {
      //Identity operator
-         if (*oper==0){
+        if (*oper==0){
             b = uRandInt()%NBonds+1;                                                   //Bond to be created 
-            AccP = ((float) NBonds)*Beta*BondDiagonalEnergy(b) / ((float) (M-n));     //Acceptance probability
+            AccP = ((float) NBonds)*Beta*BondDiagonalEnergy(2*b) / ((float) (M-n));     //Acceptance probability
             uRan =  uRand();
             if (uRan<AccP){
                *oper = 2*b;
@@ -205,7 +224,7 @@ long Replica::DiagonalMove()
      //Diagonal operator
          else if (*oper%2==0){
             b = (long)(*oper/2);                                   //Bond to be removed
-            AccP = ((float) M-n+1)/(((float) NBonds)*Beta*BondDiagonalEnergy(b));  //Acceptance probability
+            AccP = ((float) M-n+1)/(((float) NBonds)*Beta*BondDiagonalEnergy(*oper));  //Acceptance probability
             if (uRand()<AccP){
                *oper = 0;
                n -= 1;  
@@ -213,9 +232,9 @@ long Replica::DiagonalMove()
          }
      //Off-diagonal operator
          else{
-//            b = (long)((*oper-1)/2);                      //Bond being acted on
-//            ap[sites[b][0]] = -ap[sites[b][0]];           //Flip spins connected by the b'th bond
-//            ap[sites[b][1]] = -ap[sites[b][1]]; 
+              b = (long)((*oper-1)/2);                      //Bond being acted on
+              ap[sites[b][0]] = -ap[sites[b][0]];           //Flip spins connected by the b'th bond
+              ap[sites[b][1]] = -ap[sites[b][1]]; 
          }
     }
     

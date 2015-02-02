@@ -28,7 +28,7 @@ SSEXY::~SSEXY()
 };
 
 SSEXY:: SSEXY(int _r, unsigned short _Nx, unsigned short _Ny, float _T, float _Beta, 
-              long seed, bool _measSS, bool _measTime, bool _detVerbose, int _Asize, string frName, 
+              float _delta, long seed, bool _measSS, bool _measTime, bool _detVerbose, int _Asize, string frName, 
               LATTICE * _Anor, LATTICE* _Ared, LATTICE* _Aext): 
 communicator(_Nx,_Ny,_r,_T,_Beta,seed,frName,_Asize, _measTime), 
 RandomBase(seed)
@@ -51,6 +51,7 @@ RandomBase(seed)
     Ny = _Ny;
     N  = Nx*Ny;
     dim = int(Nx>1) + int(Ny>1);
+ 
     if  (dim==0) dim = 1;
 
     r = _r;
@@ -67,18 +68,17 @@ RandomBase(seed)
     
     //Initiate the replicas
     for(int i=0; i!=r; i++){
-        Replicas.push_back(new Replica(_Nx,_Ny,T,seed, i+1));
+        Replicas.push_back(new Replica(_Nx,_Ny,_delta,T,seed, i+1));
     }
     
     //Load replicas' datastructures if needed
     if (frName!="") LoadState();
     
     Debug      = false;
-    RandOffUpdate = false;
-    SRTon      = false;
+    RandOffUpdate = true;
+    SRTon      = true;
 
-    ILRTon     = false;
-    ALRTon     = true;
+    ALRTon     = false;
     Nloops     = 1;    
     nMeas      = 0;
     if  (SRTon) binSize = 100;
@@ -113,6 +113,57 @@ RandomBase(seed)
     Tns.resize(r+1,0);              //+1 is for the totals
     Partitions.clear(); 
 
+   
+    // Define weight variable for each possible vertex move
+    float sr;         // continue straight
+    float sc;         // switch and continue
+    float cs;         // switch and reverse
+    float b1, b2, b3; // three bounce moves
+
+    epsilon = 0;
+    if  (_delta < 1.0) epsilon = (1.0 - _delta)/4.0;
+    else               epsilon = 0;
+    delta = _delta;
+    // Choose move weigths that minimize the bounce weight
+    if  (_delta < 1.0){ cs = 0.0;  sc = (1.0 - _delta)/4.0; sr = (1.0 + _delta)/4.0; b1 = 0.0; b2  = 0.0;              b3 = 0.0;}
+    else{               cs = 0.0;  sc = 0.0;                sr = 1.0/2.0;            b1 = 0.0; b2  = (_delta-1.0)/2.0; b3 = 0.0;}
+    //else{               cs = 0.0; sc = 0.0;                sr = 0.5;                b1 = 0.0; b2  = (_delta-1.0)/2.0; b3 = 0.0;}
+
+    //cs = 0.5; sc = 0.5; sr = 0.5; b1 = 0; b2 = 0; b3 = 0;
+    // Associate with each vertex a set of 3 possible moves
+    // Those correspond t Sandvik's solutions of DD equations
+    float tmp2[6][4] = { {cs,sc, 0, b1},
+                         {cs,sc, 0, b1},
+                         {cs, 0,sr, b2},
+                         {cs, 0,sr, b2},
+                         { 0,sc,sr, b3},
+                         { 0,sc,sr, b3} 
+                       };
+    memcpy(OptVertexMoves,tmp2,sizeof tmp2);
+    // Normalize move weights to obtain probabilities:
+    float vweight;  // Vertex weight
+    for (int i=0; i!=6; i++){
+        vweight = 0;
+        for (int j=0; j!=4; j++) vweight += OptVertexMoves[i][j];
+        if  (vweight!=0) 
+            for (int j=0; j!=4; j++) OptVertexMoves[i][j] /= vweight;
+    }
+   
+    for (int i=0; i!=6; i++){
+        for (int j=0; j!=4; j++)
+            cout << OptVertexMoves[i][j] << " - "; 
+        cout << endl;
+    }
+    // Associate with each vertex a set of 2 possible moves.
+    // They allow non-intersecting partition of a vertex configuration.
+    float tmp3[6][4] = { {0.5,0.5,  0, 0},
+                         {0.5,0.5,  0, 0},
+                         {0.5,  0,0.5, 0},
+                         {0.5,  0,0.5, 0},
+                         {  0,0.5,0.5, 0},
+                         {  0,0.5,0.5, 0} 
+                       };
+    memcpy(DetVertexMoves,tmp3,sizeof tmp3);
     //Initialize region A
     Aregion = _Anor->getLattice(); 
   
@@ -121,7 +172,7 @@ RandomBase(seed)
     if  (measRatio){
         Ared = *(_Ared->getLattice());   //Reduced A region
         Aext = *(_Aext->getLattice());   //Extended A region
-        Adif = {};                     //Their difference: elements contained in Aext that arent in Ared 
+        Adif = {};                       //Their difference: elements contained in Aext that arent in Ared 
         if  (Aext.size()>Ared.size()){
             for (auto spin=Aext.begin(); spin!=Aext.end(); spin++){
                 if  (find(Ared.begin(),Ared.end(),*spin)==Ared.end())
@@ -179,11 +230,6 @@ RandomBase(seed)
         if  (SRTon){
             if (measRatio) eHeader += boost::str(boost::format("%16s")%"nAred");
             if (measRatio) eHeader += boost::str(boost::format("%16s")%"nAext");
-        }
-        if  (ILRTon){
-            if (measRatio) eHeader += boost::str(boost::format("%16s")%"LRatio");
-            if (measRatio) eHeader += boost::str(boost::format("%16s")%"nAredRT");
-            if (measRatio) eHeader += boost::str(boost::format("%16s")%"nAextRT");
         }
         if  (ALRTon){
             if (measRatio) eHeader += boost::str(boost::format("%16s")%"ALRatio");
@@ -401,9 +447,9 @@ long SSEXY::DeterministicOffDiagonalMove(){
                         }
                     }
                     //Determine the new vertex type by hacking SwitchLeg method
-                    legvtx = SwitchLeg(enleg%4,VTX[p],-1);
+                    legvtx = SwitchLeg(enleg%4,VTX[p],0.1,DetVertexMoves);
                     if  ((legvtx.first-(exleg%4)) != 0)
-                        legvtx = SwitchLeg(enleg%4,VTX[p],2);
+                        legvtx = SwitchLeg(enleg%4,VTX[p],0.6,DetVertexMoves);
                     
                     //Flip the vertex type
                     VTX[p] = legvtx.second;
@@ -479,9 +525,11 @@ long SSEXY::RandomOffDiagonalUpdate(){
     //----------------------------------------------------------------------        
     long j0;                      //Loop entrance leg
     long j;                       //Current leg
+    long buffj;                   //Buffer leg
     long p;
     pair<long,long> legtype;      //Struct with the leg, and operator type   
-    
+   
+     
     //Construct Nl number of loops 
     if (nTotal>0){
         for (long i=0; i!=Nloops; i++) {
@@ -490,12 +538,15 @@ long SSEXY::RandomOffDiagonalUpdate(){
             NvisitedLegs[i] = 0;         //Number of visited legs for i'th loop
             //Construct an operator-loop
             do  {
-                    p = (long) j/4;                     //Current operator index
-                    legtype = SwitchLeg(j%4,VTX[p],0.5);//Get the next leg and the new operator's type
+                    p     = (long) j/4;                     //Current operator index
+                    buffj = j;
+                    //Get the next leg and the new operator's type
+                    legtype = SwitchLeg(j%4,VTX[p],uRand(),OptVertexMoves); 
                     j       = legtype.first +4*p;       //Move to the next leg
                     VTX[p]  = legtype.second;           //Update the type of the operator
-                    NvisitedLegs[i] += 1;
-                    if   (j == j0) break;               //If the loop is closed, we are done
+                    
+                    if  (buffj != j) NvisitedLegs[i] += 1;
+                    if  (j == j0) break;               //If the loop is closed, we are done
                     else{ 
                         j = LINK[j];                   //Else move to the next linked leg
                         NvisitedLegs[i] += 1;
@@ -536,101 +587,7 @@ double SSEXY::ALRTrick(){
 }
 
 
-/**************************************************************************
-* Attemp to switch the size of region A based on the boundary conditions
-***************************************************************************/
-float SSEXY::ILRTrick(){
 
-    //Partition edge spins according to the loops they belong to
-    if  (RandOffUpdate)     LoopPartition(Ared);
-
-    bool lDebug = false;
-    if  (lDebug){
-        cout << endl << "Loops at deltaA=================================" << endl;
-        for (int r=0; r!=2; r++){
-            for (int bs=0; bs!=2; bs++){
-                for (auto spin=Adif.begin(); spin!=Adif.end(); spin++)
-                    cout << setw(4) << Partitions[r][*spin+N*bs];
-                cout << endl;
-            } 
-        cout << endl << endl;
-        }
-    }
-
-
-    long downLoop;
-    long upLoop;
-    vector<long> twoLoops (2,0);
-    map<long, set<long>> ConnectedLoops;
-    set<long> AllLoops;
-    //Merge loops that share common spins from Adif
-    for (auto ADspin=Adif.begin(); ADspin!=Adif.end(); ADspin++){
-        //If region A is increased, BCs exist between replicas 
-        if  (Ared.size()<Aext.size()){    
-            twoLoops[0] = Partitions[0][*ADspin]; 
-            twoLoops[1] = Partitions[1][*ADspin+N]; 
-        }
-        //If region A is decreased, BCs exist within replicas
-        else{
-            twoLoops[0] = Partitions[0][*ADspin]; 
-            twoLoops[1] = Partitions[0][*ADspin+N]; 
-        }
-
-        //Create a map of loop connections. 
-        //Key = loop index, value = set of connected loops
-        for (int i=0; i!=2; i++){
-            downLoop = twoLoops[i];
-            upLoop   = twoLoops[(i+1)%2];
-            if  (not ConnectedLoops.count(downLoop)){
-                set<long> lvalue {upLoop};  
-                ConnectedLoops[downLoop] =lvalue; 
-                AllLoops.insert(downLoop);
-            }
-            else
-                ConnectedLoops[downLoop].insert(upLoop);
-            }
-    }
-
-    if  (lDebug){
-        cout << "Connected loops map: " << endl;
-        for (auto loop=ConnectedLoops.begin(); loop!=ConnectedLoops.end(); loop++){
-            cout << loop->first << ": ";
-            for (auto loop2=loop->second.begin(); loop2!=loop->second.end(); loop2++){
-                cout << *loop2 << " ";
-            }
-            cout << endl;
-        }
-    }
-
-    long L0 = AllLoops.size();
-    long Ls = 0;
-
-    set<long> MarkedLoops; 
-    set<long> path;
-
-    if  (lDebug) cout << "Paths: " << endl;
-
-    for (auto loop=AllLoops.begin(); loop!=AllLoops.end(); loop++)
-        if  (not MarkedLoops.count(*loop)){
-            GetConnectedSubraph(ConnectedLoops, path, *loop);
-            for (auto mloop=path.begin(); mloop!=path.end(); mloop++){
-                MarkedLoops.insert(*mloop);
-                if  (lDebug) cout << *mloop << " ";
-            }
-            if  (lDebug) cout << endl;
-
-            path.clear();  
-            Ls += 1;
-        }          
-
-    if  (lDebug) cout << "Ls = " << Ls << " L0 = " << L0 << endl;
-     
-    nAredRT += pow(2,L0);
-    nAextRT += pow(2,Ls);
-
-    return pow(2,Ls-L0);
-            
-}
 
 
 /**************************************************************************
@@ -708,8 +665,6 @@ int SSEXY::Measure()
             //if  (Aregion == &Ared) nAred += 1;
             //else                   nAext += 1; 
         }
-        if  (ILRTon)
-            LRatio += ILRTrick();
 
         // If deterministic loops update is on and Ared = Anorm
         // the calculation has already been performed during an off-update
@@ -721,7 +676,7 @@ int SSEXY::Measure()
     long  TNLegs = 0;
     if  (nMeas == binSize){
         //Record total Energy per spin
-        E = -((float) Tns[r]/((float) binSize*N))/Beta + r*dim*0.5;   //r*1.0 term represents the added energy offset per bond
+        E = -((float) Tns[r]/((float) binSize*N))/Beta + r*dim*(epsilon+delta/4.0);   //r*1.0 term represents the added energy offset per bond
         *communicator.stream("estimator") << boost::str(boost::format("%16.8E%16.8E") %(Tns[r]/(1.0*binSize)) %E);
         
         //Record loop data
@@ -742,14 +697,6 @@ int SSEXY::Measure()
                 *communicator.stream("estimator") << boost::str(boost::format("%16.8E") %(1.0*nAext/(1.0*binSize)));
                 nAred = 0;
                 nAext = 0;
-            }
-            if  (ILRTon){
-                *communicator.stream("estimator") << boost::str(boost::format("%16.8E") %(1.0*LRatio/(1.0*binSize)));
-                *communicator.stream("estimator") << boost::str(boost::format("%16.8E") %(1.0*nAredRT/(1.0*binSize)));
-                *communicator.stream("estimator") << boost::str(boost::format("%16.8E") %(1.0*nAextRT/(1.0*binSize)));
-                LRatio = 0;
-                nAredRT = 0;
-                nAextRT = 0;
             }
             if  (ALRTon){
                 *communicator.stream("estimator") << boost::str(boost::format("%16.8E") %(1.0*ALRatio/(1.0*binSize)));
@@ -916,7 +863,7 @@ int SSEXY::MCstep()
         Replicas[j]->ConstructLinks();
         //timer.stop("LinksConstruct");
         
-        if  ((measRatio and (ILRTon or ALRTon)) or not(RandOffUpdate)){
+        if  ((measRatio and ALRTon) or not(RandOffUpdate)){
             //timer.resume("DetPathTracing"); 
             Replicas[j]->GetDeterministicLinks();
             //timer.stop("DetPathTracing"); 
@@ -1074,7 +1021,7 @@ int SSEXY::MCstep()
 
 
 long SSEXY::Bounce(long enLeg){
-    return 0;
+    return enLeg;
 }
 
 long SSEXY::ContinueStraight(long enLeg){
@@ -1088,88 +1035,120 @@ long SSEXY::SwitchReverse(long enLeg){
 long SSEXY::SwitchContinue(long enLeg){
     return enLeg - 2*sgn(enLeg - 2);
 }
-//#################################################################
-//#################################################################
 
-pair<long,long> SSEXY::SwitchLeg(long enLeg, long vtype, float prob){
+//#################################################################
+// Determine move type based on entrace and exit legs
+//#################################################################
+//int SSEXY::DetermineMove(long enLeg, long exLeg){
+//    
+//    // Make sure enLeg is always smaller than exLeg     
+//    if  (enLeg > exLeg): swap(enLeg, exLeg);
+//    
+//    int MoveType;
+//    if  (exLeg-enLeg == 2) MoveType = 1;   // switch and continue
+//    else if (enLeg==exLeg) MoveType = 3;   // bounce
+//    else if (
+//             ((enLeg==0) and (exLeg==1)) or 
+//             ((enLeg==2) and (exLeg==3))
+//            )              MoveType = 0;   // continue straight
+//    else                   MoveType = 2;   // switch and reverse
+//
+//    return MoveType;
+//}
+
+//int SSEXY::DetermineMove(long vertex, long enLeg, long exLeg){
+    
+
+//#################################################################
+pair<long,long> SSEXY::SwitchLeg(long enLeg, long vtype, float chance, float VertexMoves[][4]){
     long exLeg   = -1;
     long newtype = -1;
-    switch (vtype){
-        case 1:
-                    if  (uRand()<prob){
-                            if ((enLeg==1) or (enLeg==3)) newtype = 5;
-                            else newtype = 6;
-                            exLeg   = SwitchContinue(enLeg);
-                    }                
-                    else{
-                            if ((enLeg==0) or (enLeg==3)) newtype = 3;
-                            else newtype = 4;
-                            exLeg   = ContinueStraight(enLeg);
-                    }
-                    break;
-        case 2:
-                    if  (uRand()<prob){
-                            if ((enLeg==1) or (enLeg==3)) newtype = 6;
-                            else newtype = 5;
-                            exLeg   = SwitchContinue(enLeg);
-                    }                
-                    else{
-                            if ((enLeg==0) or (enLeg==3)) newtype = 4;
-                            else newtype = 3;
-                            exLeg   = ContinueStraight(enLeg);
-                    }
-                    break;
-        case 3:
-                    if  (uRand()<prob){
-                            if ((enLeg==0) or (enLeg==3)) newtype = 1;
-                            else newtype = 2;
-                            exLeg   = ContinueStraight(enLeg);
-                    }                
-                    else{
-                            if ((enLeg==0) or (enLeg==1)) newtype = 5;
-                            else newtype = 6;
-                            exLeg   = SwitchReverse(enLeg);
-                    }
-                    break;
-        case 4:
-                    if  (uRand()<prob){
-                            if ((enLeg==0) or (enLeg==3)) newtype = 2;
-                            else newtype = 1;
-                            exLeg   = ContinueStraight(enLeg);
-                    }                
-                    else{
-                            if ((enLeg==0) or (enLeg==1)) newtype = 6;
-                            else newtype = 5;
-                            exLeg   = SwitchReverse(enLeg);
-                    }
-                    break;
-        case 5:
-                    if  (uRand()<prob){
-                            if ((enLeg==0) or (enLeg==1)) newtype = 3;
-                            else newtype = 4;
-                            exLeg   = SwitchReverse(enLeg);
-                    }                
-                    else{
-                            if ((enLeg==0) or (enLeg==2)) newtype = 2;
-                            else newtype = 1;
-                            exLeg   = SwitchContinue(enLeg);
-                    }
-                    break;
-             
-        case 6:
-                    if  (uRand()<prob){
-                            if ((enLeg==0) or (enLeg==1)) newtype = 4;
-                            else newtype = 3;
-                            exLeg   = SwitchReverse(enLeg);
-                    }                
-                    else{
-                            if ((enLeg==0) or (enLeg==2)) newtype = 1;
-                            else newtype = 2;
-                            exLeg   = SwitchContinue(enLeg);
-                    }
-                    break;
- 
+   
+    // Perform the bounce move if odds are high enough
+    chance -=VertexMoves[vtype-1][3];
+    if  (chance<0){
+        exLeg = enLeg;
+        newtype = vtype;
     }
+    // Otherwise perform one of the other 2 possible moves
+    else{
+        switch (vtype){
+            case 1:
+                        if  (chance-VertexMoves[vtype-1][1]<0){
+                            if ((enLeg==1) or (enLeg==3)) newtype = 5;
+                            else                          newtype = 6;
+                            exLeg   = SwitchContinue(enLeg);
+                        }                
+                        else{
+                                if ((enLeg==0) or (enLeg==3)) newtype = 3;
+                                else                          newtype = 4;
+                                exLeg   = ContinueStraight(enLeg);
+                        }
+                        break;
+            case 2:
+                        if  (chance-VertexMoves[vtype-1][1]<0){
+                                if ((enLeg==1) or (enLeg==3)) newtype = 6;
+                                else                          newtype = 5;
+                                exLeg   = SwitchContinue(enLeg);
+                        }                
+                        else{
+                                if ((enLeg==0) or (enLeg==3)) newtype = 4;
+                                else                          newtype = 3;
+                                exLeg   = ContinueStraight(enLeg);
+                        }
+                        break;
+            case 3:
+                        if  (chance-VertexMoves[vtype-1][0]<0){
+                                if ((enLeg==0) or (enLeg==3)) newtype = 1;
+                                else                          newtype = 2;
+                                exLeg   = ContinueStraight(enLeg);
+                        }                
+                        else{
+                                if ((enLeg==0) or (enLeg==1)) newtype = 5;
+                                else                          newtype = 6;
+                                exLeg   = SwitchReverse(enLeg);
+                        }
+                        break;
+            case 4:
+                        if  (chance-VertexMoves[vtype-1][0]<0){
+                                if ((enLeg==0) or (enLeg==3)) newtype = 2;
+                                else                          newtype = 1;
+                                exLeg   = ContinueStraight(enLeg);
+                        }                
+                        else{
+                                if ((enLeg==0) or (enLeg==1)) newtype = 6;
+                                else                          newtype = 5;
+                                exLeg   = SwitchReverse(enLeg);
+                        }
+                        break;
+            case 5:
+                        if  (chance-VertexMoves[vtype-1][2]<0){
+                                if ((enLeg==0) or (enLeg==1)) newtype = 3;
+                                else                          newtype = 4;
+                                exLeg   = SwitchReverse(enLeg);
+                        }                
+                        else{
+                                if ((enLeg==0) or (enLeg==2)) newtype = 2;
+                                else                          newtype = 1;
+                                exLeg   = SwitchContinue(enLeg);
+                        }
+                        break;
+                 
+            case 6:
+                        if  (chance-VertexMoves[vtype-1][2]<0){
+                                if ((enLeg==0) or (enLeg==1)) newtype = 4;
+                                else                          newtype = 3;
+                                exLeg   = SwitchReverse(enLeg);
+                        }                
+                        else{
+                                if ((enLeg==0) or (enLeg==2)) newtype = 1;
+                                else                          newtype = 2;
+                                exLeg   = SwitchContinue(enLeg);
+                        }
+                        break;
+ 
+        } // end switch
+    }     // end if 
 return pair <long,long> (exLeg,newtype);
 }
 
@@ -1197,13 +1176,14 @@ int main(int argc, char *argv[])
                              "If set to an integer value, "
                              "it defines the number of consecutif spins in region A. ")
             ;
-    measurementOptions.add_options()
+    physicalOptions.add_options()
             ("temperature,T",po::value<double>()->default_value(-1), "temperature")
             ("beta,b",       po::value<double>()->default_value(-1),"inverse temperature")
             ("width,x",      po::value<int>(),"lattice width")
             ("height,y",     po::value<int>()->default_value(1),"lattice height")
+            ("delta",        po::value<double>(),"strength of SzSz interaction")
             ;
-    physicalOptions.add_options()
+    measurementOptions.add_options()
             ("measn,m",      po::value<long>(),"number of measurements to take")
             ("super,w",      "turn on the spin stifness measurement. \n(r must be set to 1)")
             ("rtrick,t",     po::value<string>()->default_value(""),"path to the file defining extended region A.")
@@ -1225,6 +1205,11 @@ int main(int argc, char *argv[])
     
     if  ((params["temperature"].as<double>() != -1) && (params["beta"].as<double>() != -1)){
         cerr << "Error: simultanious definition of temperature via T and beta parameters" << endl;
+        return 1; 
+    }
+    
+    if  (!(params.count("delta"))){
+        cerr << "Error: specify the delta parameter" << endl;
         return 1; 
     }
     
@@ -1273,7 +1258,9 @@ int main(int argc, char *argv[])
 
     SSEXY ssexy(params["replica"].as<int>(), params["width"].as<int>(),
                 params["height"].as<int>(),  params["temperature"].as<double>(), 
-                params["beta"].as<double>(), params["process_id"].as<int>(), 
+                //params["beta"].as<double>(), params["delta"].as<float>(),
+                params["beta"].as<double>(), params["delta"].as<double>(),
+                params["process_id"].as<int>(), 
                 params.count("super"),       params.count("timer"),
                 params.count("detverbose"),
                 Anor.getSize(),  

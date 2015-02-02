@@ -24,6 +24,9 @@ class SSEXY: public RandomBase{
         bool measRatio;
         bool measTime;
         bool detVerbose;
+        float OptVertexMoves[6][4];
+        float DetVertexMoves[6][4];
+
 
         //Physical parameters
         int r; // order of Renyi entropy
@@ -33,6 +36,8 @@ class SSEXY: public RandomBase{
         int dim;
         float Beta;
         float T;
+        float delta;
+        float epsilon;
 
         //Measurements
         float SpinStiffness;
@@ -76,7 +81,6 @@ class SSEXY: public RandomBase{
         long nSaved; 
         bool Debug;
         bool SRTon;
-        bool ILRTon;
         bool ALRTon;
         bool RandOffUpdate;
 
@@ -89,19 +93,18 @@ class SSEXY: public RandomBase{
         long ContinueStraight(long enLeg);
         long SwitchReverse(long enLeg);
         long SwitchContinue(long enLeg);
-        pair<long,long> SwitchLeg(long leg, long vtype, float prob);
+        pair<long,long> SwitchLeg(long leg, long vtype, float chance, float VertexMoves[][4]);
         int BCnextSpin(int sindex, int& replica,bool connected);
         vector<long>* SwitchAregion();
         
         double ALRTrick();
-        float ILRTrick();
         long  LoopPartition(vector<long>& BC);
         long  DeterministicOffDiagonalMove();
         long  RandomOffDiagonalUpdate();
         //long  GetConnectedSubraph(map<long,set<long>>& graph, set<long>& path,long cpos);
 
     public:
-       SSEXY(int _r, unsigned short _Nx, unsigned short _Ny, float _T, float _Beta, long seed, bool _measSS, bool _measTime, bool _detVerbose, int _Asize, string rfName, LATTICE* _Anor, LATTICE* _Ared, LATTICE* _Aext); 
+       SSEXY(int _r, unsigned short _Nx, unsigned short _Ny, float _T, float _Beta, float _delta, long seed, bool _measSS, bool _measTime, bool _detVerbose, int _Asize, string rfName, LATTICE* _Anor, LATTICE* _Ared, LATTICE* _Aext); 
        ~SSEXY();
        int   AdjustParameters();
        int   MCstep(); 
