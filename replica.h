@@ -17,8 +17,8 @@ private:
     //Physical parameters
     unsigned short Nx,Ny;        //Lattice spatial dimensions
     unsigned short ndim;         //Lattice dimension
-    float epsilon;               //SSE epsilon parameter
-    float delta;                 //Interaction strength of S_z*S_z term
+    double epsilon;               //SSE epsilon parameter
+    double delta;                 //Interaction strength of S_z*S_z term
     long   NBonds;               //Number of bonds
     long N;                      //Number of spin sites
     float T;                     //Temperature
@@ -44,7 +44,7 @@ private:
                                 //that a particular spin belongs to
     map<long, list<long>> LoopPaths;
     long  PossibleVertexMoves[6][2];   
-    float VertexWeight[6]; 
+    double VertexWeight[6]; 
    
     //Methods
     float BondDiagonalEnergy(long b);
@@ -57,7 +57,7 @@ private:
 
 public:
 
-    Replica(unsigned short _Nx, unsigned short _Ny, float _delta,float _T, long seed, int _id);
+    Replica(unsigned short _Nx, unsigned short _Ny, double _delta,float _T, long seed, int _id);
 
     long  MeasureMagnetization();
     float MeasureSpinStiffness();
