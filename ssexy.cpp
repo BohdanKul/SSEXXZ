@@ -1197,7 +1197,7 @@ int main(int argc, char *argv[])
             ("beta,b",       po::value<double>()->default_value(-1),"inverse temperature")
             ("width,x",      po::value<int>(),"lattice width")
             ("height,y",     po::value<int>()->default_value(1),"lattice height")
-            ("delta",        po::value<double>(),"strength of SzSz interaction")
+            ("delta,d",        po::value<double>(),"strength of SzSz interaction")
             ;
     measurementOptions.add_options()
             ("measn,m",      po::value<long>(),"number of measurements to take")
