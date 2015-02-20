@@ -75,11 +75,11 @@ RandomBase(seed)
     if (frName!="") LoadState();
     
     Debug      = false;
-    RandOffUpdate = true;
+    RandOffUpdate = false;
     
     measRatio = _Aext->isDefined();
     SRTon = false; ALRTon = false;
-    if (measRatio and (_delta==1.0))
+    if (measRatio and ((_delta==1.0) or (_delta==0.0) or (_delta==-1.0)))
        {SRTon = false; ALRTon = true;}
     else
        {SRTon = true;  ALRTon = false;}
@@ -175,10 +175,18 @@ RandomBase(seed)
                                {0, 0, 1, 0},
                                {0, 0, 1, 0} 
                              };
-
+    // Same for its antipodal point with delta = -1.
+    float aHeisenberg[6][4] = { {0, 1, 0, 0},
+                                {0, 1, 0, 0},
+                                {0, 0, 0, 0},
+                                {0, 0, 0, 0},
+                                {0, 1, 0, 0},
+                                {0, 1, 0, 0} 
+                             };
     // Store the deterministic moves depending on model under question.    
-    if  (delta == 1) memcpy(DetVertexMoves, Heisenberg, sizeof Heisenberg);
-    else             memcpy(DetVertexMoves, XY,         sizeof XY);
+    if       (delta ==  1.0) memcpy(DetVertexMoves,  Heisenberg, sizeof Heisenberg);
+    else if  (delta == -1.0) memcpy(DetVertexMoves, aHeisenberg, sizeof aHeisenberg);
+    else                     memcpy(DetVertexMoves,  XY,         sizeof XY);
 
     //Initialize region A
     Aregion = _Anor->getLattice(); 

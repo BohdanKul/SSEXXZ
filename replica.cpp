@@ -348,6 +348,10 @@ long Replica::SwitchLegDeter(long enLeg, long vtype, long p){
     //If it is Heisenberg model, there is only one possible 
     //move to make:
     if  (delta == 1.0) return SwitchReverse(enLeg);
+    
+    //Similarly for its antipodal point:
+    if  (delta == -1.0) return SwitchContinue(enLeg);
+    
     //Otherwise, there are possible moves and the path tracing
     //has to be adjusted accordingly.
 
