@@ -66,16 +66,12 @@ RandomBase(seed)
         T = 1.0/(1.0*_Beta);
     } 
     
-    //Initiate the replicas
-    for(int i=0; i!=r; i++){
-        Replicas.push_back(new Replica(_Nx,_Ny,_delta,T,seed, i+1));
-    }
     
     //Load replicas' datastructures if needed
     if (frName!="") LoadState();
     
     Debug      = false;
-    RandOffUpdate = false;
+    RandOffUpdate = true;
     
     measRatio = _Aext->isDefined();
     SRTon = false; ALRTon = false;
@@ -125,13 +121,30 @@ RandomBase(seed)
     float cs;         // switch and reverse
     float b1, b2, b3; // three bounce moves
 
+    // Set algorithm configuration variables
     epsilon = 0;
-    if  (_delta < 1.0) epsilon = (1.0 - _delta)/4.0;
-    else               epsilon = 0;
     delta = _delta;
+    if (RandOffUpdate){
+        if  (delta < 1.0) epsilon = (1.0 - delta)/4.0;
+        else              epsilon = 0;
+    }
+    else{
+        if  (delta ==  1.0) epsilon = 0.0;
+        if  (delta ==  0.0) epsilon = 0.5;  // The only difference with random update
+        if  (delta == -1.0) epsilon = 0.5;
+        }    
+
+    //Initiate the replicas
+    for(int i=0; i!=r; i++){
+        Replicas.push_back(new Replica(_Nx,_Ny, delta, epsilon, T,seed, i+1));
+    }
+
+
     // Choose move weigths that minimize the bounce weight
     if  (_delta < 1.0){ cs = 0.0;  sc = (1.0 - _delta)/4.0; sr = (1.0 + _delta)/4.0; b1 = 0.0; b2  = 0.0;              b3 = 0.0;}
     else{               cs = 0.0;  sc = 0.0;                sr = 1.0/2.0;            b1 = 0.0; b2  = (_delta-1.0)/2.0; b3 = 0.0;}
+
+
 
     // Associate with each vertex a set of 3 possible moves
     // Those correspond t Sandvik's solutions of DD equations

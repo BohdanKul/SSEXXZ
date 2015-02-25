@@ -16,7 +16,7 @@ using namespace std;
 /**************************************************************
 *  Constructor 
 **************************************************************/
-Replica::Replica(unsigned short _Nx, unsigned short _Ny, double _delta, float _T, long seed, int _id):
+Replica::Replica(unsigned short _Nx, unsigned short _Ny, double _delta, double _epsilon, float _T, long seed, int _id):
 //Initialize random objects with default values
  RandomBase(seed)
 
@@ -59,9 +59,8 @@ Replica::Replica(unsigned short _Nx, unsigned short _Ny, double _delta, float _T
 
     //Initialize SSE parameters
     delta   = _delta;
-    epsilon = 0;
-    if  (delta < 1.0) epsilon = (1.0 - delta)/4.0;
-    else              epsilon = 0;
+    epsilon = _epsilon;
+    
     //Set vertex weights 
     double tmp2[6] = { epsilon            , epsilon,
                       delta/2.0 + epsilon, delta/2.0 + epsilon,

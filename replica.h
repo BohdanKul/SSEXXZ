@@ -57,7 +57,7 @@ private:
 
 public:
 
-    Replica(unsigned short _Nx, unsigned short _Ny, double _delta,float _T, long seed, int _id);
+    Replica(unsigned short _Nx, unsigned short _Ny, double _delta, double _epsilon, float _T, long seed, int _id);
 
     long  MeasureMagnetization();
     float MeasureSpinStiffness();
