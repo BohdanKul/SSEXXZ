@@ -20,10 +20,11 @@ LATTICE::LATTICE(string _Lname, const char* _cline)
     char *end;
     size = strtol(_cline, &end, 10);
 
-    if  (size==0) {
-        _isDefined = true;
-        return;
-    }
+    //if  (size==0) {
+    //    cout << "Taking " << _Lname << " region to be zero" << endl;
+    //    _isDefined = true;
+    //    return;
+    //}
 
     if  (!*end){ 
         cout << "Automatic generation of region  " << Lname << " containing " << size << " spins" << endl;

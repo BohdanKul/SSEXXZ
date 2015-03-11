@@ -210,17 +210,13 @@ RandomBase(seed)
         Ared = *(_Ared->getLattice());   //Reduced A region
         Aext = *(_Aext->getLattice());   //Extended A region
         Adif = {};                       //Their difference: elements contained in Aext that arent in Ared 
-        if  (Aext.size()>Ared.size()){
-            for (auto spin=Aext.begin(); spin!=Aext.end(); spin++){
-                if  (find(Ared.begin(),Ared.end(),*spin)==Ared.end())
-                    Adif.push_back(*spin);
-                }
+        for (auto spin=Aext.begin(); spin!=Aext.end(); spin++){
+            if  (find(Ared.begin(),Ared.end(),*spin)==Ared.end())
+                Adif.push_back(*spin);
             }
-        else{
-            for (auto spin=Ared.begin(); spin!=Ared.end(); spin++){
-                if  (find(Aext.begin(),Aext.end(),*spin)==Aext.end())
-                    Adif.push_back(*spin);
-                }
+        for (auto spin=Ared.begin(); spin!=Ared.end(); spin++){
+            if  (find(Aext.begin(),Aext.end(),*spin)==Aext.end())
+                Adif.push_back(*spin);
             }
             
         if  (Adif.empty()){
